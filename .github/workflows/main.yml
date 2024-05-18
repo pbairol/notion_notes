@@ -1,0 +1,40 @@
+name: Run Notion to Markdown
+
+on:
+  schedule:
+    # Run at 00:00 UTC every day
+    - cron: '0 0 * * *'
+  push:
+    branches:
+      - main
+
+jobs:
+  run-notion-script:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '20'  # Use the appropriate Node.js version
+
+    - name: Install dependencies
+      run: npm install
+
+    - name: Run Notion to Markdown script
+      run: node test.js
+      env:
+        NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+
+    - name: Commit and push changes
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add .
+        git commit -m "Update Markdown files from Notion"
+        git push
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
