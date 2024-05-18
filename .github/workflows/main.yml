@@ -33,7 +33,7 @@ jobs:
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git add notes/*
+        git add .
         git commit -m "Update Markdown files from Notion"
         git push
       env:
