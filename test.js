@@ -42,14 +42,22 @@ const n2m = new NotionToMarkdown({
     const mdblocks = await n2m.pageToMarkdown(pageId);
     const mdString = n2m.toMarkdownString(mdblocks);
 
-    // Split the markdown string into sections for each child page
-    const childPages = mdblocks.filter(block => block.type === 'child_page');
-    // const sections = mdString.split(/(?=## )/); // Assuming child pages are marked with '##' headers
-    for (const [title, content] of Object.entries(mdString)) {
+    // Ensure the notes directory exists
+    const notesDir = path.join(__dirname, 'notes');
+    if (!fs.existsSync(notesDir)) {
+        fs.mkdirSync(notesDir);
+    }
+
+    // Write markdown files
+    const mdContent = {
+        [pageTitle]: mdString,
+    };
+
+    for (const [title, content] of Object.entries(mdContent)) {
         // Create a valid filename by replacing spaces with underscores and removing special characters
         const filename = title.replace(/[^a-z0-9]/gi, '_').toLowerCase() + '.md';
-        // Write the content to the file
-        fs.writeFileSync(path.join(__dirname, filename), content);
+        // Write the content to the file in the notes directory
+        fs.writeFileSync(path.join(notesDir, filename), content);
         console.log(`Created file: ${filename}`);
     }
 
