@@ -8,7 +8,7 @@ const path = require('path');
 // import {NotionToMarkdown} from "notion-to-md";
 
 const notion = new Client({
-    auth: "secret_Yg3cnSOJdaXSPVKFJ3ZdAzJw2wfl7mc2IEJwLSB4Tm5", // internal integration token
+    auth: process.env.NOTION_API_KEY,
 });
 
 // passing notion client to the option
@@ -23,7 +23,18 @@ const n2m = new NotionToMarkdown({
 
 (async () => {
 
-    const pageId = "bf7ee61531b3410abc53aa5f0b8520cf"; // page's hash
+    const response = await notion.search({
+        query: 'Data Structures & Algorithm Notes',
+        filter: {
+            value: 'page',
+            property: 'object'
+        },
+        sort: {
+            direction: 'ascending',
+            timestamp: 'last_edited_time'
+        },
+    });
+    const pageId = response.results[0].id; // page's hash
     const page = await notion.pages.retrieve({ page_id: pageId });
     const pageTitle = page.properties.title.title[0].plain_text;
 
