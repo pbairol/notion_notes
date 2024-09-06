@@ -4,10 +4,12 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
+// Initialize Notion client
 const notion = new Client({
     auth: process.env.NOTION_API_KEY,
 });
 
+// Initialize NotionToMarkdown
 const n2m = new NotionToMarkdown({
     notionClient: notion,
     config: {
@@ -15,21 +17,30 @@ const n2m = new NotionToMarkdown({
     }
 });
 
+/**
+ * Process a Notion page and its subpages
+ * @param {string} pageId - The ID of the Notion page
+ * @param {string} baseDir - The base directory to save the markdown files
+ * @param {number} depth - The current depth of recursion (for logging purposes)
+ */
 async function processNotionPage(pageId, baseDir, depth = 0) {
+    // Retrieve the page details
     const page = await notion.pages.retrieve({ page_id: pageId });
     const pageTitle = page.properties.title.title[0].plain_text;
     console.log(`${'  '.repeat(depth)}Processing: ${pageTitle}`);
 
+    // Convert page content to markdown
     const mdblocks = await n2m.pageToMarkdown(pageId);
     const mdString = n2m.toMarkdownString(mdblocks);
 
+    // Sanitize the title for use as a filename or directory name
     const sanitizedTitle = pageTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase();
 
     // Check if the page has child pages
     const hasChildPages = mdblocks.some(block => block.type === 'child_page');
 
     if (hasChildPages) {
-        // Create a directory for this page
+        // Create a directory for this page if it has subpages
         const pageDir = path.join(baseDir, sanitizedTitle);
         if (!fs.existsSync(pageDir)) {
             fs.mkdirSync(pageDir, { recursive: true });
@@ -48,17 +59,26 @@ async function processNotionPage(pageId, baseDir, depth = 0) {
             }
         }
     } else {
-        // Write the page content as a single .md file
+        // Write the page content as a single .md file if it has no subpages
         const filePath = path.join(baseDir, `${sanitizedTitle}.md`);
         fs.writeFileSync(filePath, `# ${pageTitle}\n\n${mdString.parent}`);
         console.log(`${'  '.repeat(depth)}Created ${filePath}`);
     }
 }
 
+/**
+ * Commit changes and push to GitHub
+ * @param {string} baseDir - The base directory of the Git repository
+ */
 async function commitAndPush(baseDir) {
     try {
-        // Initialize git repository if not already initialized
-        execSync('git init', { cwd: baseDir });
+        // Check if the directory is already a Git repository
+        const isGitRepo = fs.existsSync(path.join(baseDir, '.git'));
+
+        if (!isGitRepo) {
+            // Initialize git repository if not already initialized
+            execSync('git init', { cwd: baseDir });
+        }
 
         // Add all files in the base directory
         execSync('git add .', { cwd: baseDir });
@@ -75,6 +95,10 @@ async function commitAndPush(baseDir) {
     }
 }
 
+/**
+ * Retrieve all accessible Notion pages
+ * @returns {Promise<Array>} Array of accessible Notion pages
+ */
 async function getAllAccessiblePages() {
     let pages = [];
     let hasMore = true;
@@ -98,16 +122,20 @@ async function getAllAccessiblePages() {
     return pages;
 }
 
+// Main execution
 (async () => {
     try {
+        // Set up the base directory for Notion notes
         const baseDir = path.join(__dirname, 'notion_notes');
         if (!fs.existsSync(baseDir)) {
             fs.mkdirSync(baseDir);
         }
 
+        // Retrieve all accessible Notion pages
         const pages = await getAllAccessiblePages();
         console.log(`Found ${pages.length} accessible pages`);
 
+        // Process each page
         for (const page of pages) {
             await processNotionPage(page.id, baseDir);
         }
