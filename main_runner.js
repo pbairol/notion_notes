@@ -70,17 +70,14 @@ async function processNotionPage(pageId, baseDir, depth = 0, processedPages = ne
 }
 
 /**
- * Set up Git configuration and repository
+ * Set up Git repository
  * @param {string} baseDir - The base directory of the Git repository
  */
 function setupGit(baseDir) {
-    // Configure Git
-    execSync('git config --local user.name "GitHub Action"', { cwd: baseDir });
-    execSync('git config --local user.email "action@github.com"', { cwd: baseDir });
-
     // Initialize git repository if not already initialized
     if (!fs.existsSync(path.join(baseDir, '.git'))) {
         execSync('git init', { cwd: baseDir });
+        execSync('git checkout -b main', { cwd: baseDir }); // Create and switch to main branch
     }
 }
 
@@ -90,7 +87,7 @@ function setupGit(baseDir) {
  */
 async function commitAndPush(baseDir) {
     try {
-        setupGit(baseDir);
+        setupGit(baseDir);  // Ensure repo and branch setup
 
         // Add all files in the base directory
         execSync('git add .', { cwd: baseDir });
@@ -98,7 +95,7 @@ async function commitAndPush(baseDir) {
         // Commit changes
         execSync('git commit -m "Update Notion notes"', { cwd: baseDir });
 
-        // Push to GitHub (assuming the remote is already set up)
+        // Push to GitHub
         execSync('git push origin main', { cwd: baseDir });
 
         console.log('Successfully committed and pushed to GitHub');
@@ -106,6 +103,7 @@ async function commitAndPush(baseDir) {
         console.error('Error during Git operations:', error.message);
     }
 }
+
 
 /**
  * Retrieve all accessible Notion pages
