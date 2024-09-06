@@ -52,9 +52,17 @@ async function processNotionPage(pageId, baseDir, depth = 0, processedPages = ne
             fs.mkdirSync(pageDir, { recursive: true });
         }
 
-        // Write the main page content
+        // Prepare content for index.md, including links to child pages
+        let indexContent = `# ${pageTitle}\n\n${mdString.parent}\n\n## Child Pages\n\n`;
+        for (const childPage of childPages) {
+            const childTitle = childPage.title;
+            const childSanitizedTitle = childTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+            indexContent += `- [${childTitle}](./${childSanitizedTitle}.md)\n`;
+        }
+
+        // Write the main page content with child page links
         const mainFilePath = path.join(pageDir, `index.md`);
-        fs.writeFileSync(mainFilePath, `# ${pageTitle}\n\n${mdString.parent}`);
+        fs.writeFileSync(mainFilePath, indexContent);
         console.log(`${'  '.repeat(depth)}Created ${mainFilePath}`);
 
         // Process child pages
