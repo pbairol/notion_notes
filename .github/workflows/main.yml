@@ -11,6 +11,8 @@ on:
 jobs:
   run-notion-script:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
     - name: Checkout repository
@@ -24,20 +26,10 @@ jobs:
     - name: Install dependencies
       run: npm install @notionhq/client notion-to-md
 
-    - name: Set up Git identity
-      run: |
-        git config --global user.email "action@github.com"
-        git config --global user.name "GitHub Action"
-
     - name: Run Notion to Markdown script
       run: node main_runner.js
       env:
         NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
-
-    - name: Commit and push changes
-      run: |
-        git add .
-        git commit -m "Update Markdown files from Notion"
-        git push
-      env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    # Remove the separate commit and push step as it's now handled in the script
