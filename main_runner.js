@@ -26,12 +26,21 @@ const n2m = new NotionToMarkdown({
  */
 async function processNotionPage(pageId, baseDir, depth = 0, processedPages = new Set()) {
     if (processedPages.has(pageId)) {
-        return; // Skip if page has already been processed
+        return null; // Skip if page has already been processed
     }
     processedPages.add(pageId);
 
-    // Retrieve the page details
-    const page = await notion.pages.retrieve({ page_id: pageId });
+    let page;
+    try {
+        // Retrieve the page details
+        page = await notion.pages.retrieve({ page_id: pageId });
+    } catch (error) {
+        if (error.code === 'object_not_found') {
+            console.warn(`Warning: Could not access page with ID: ${pageId}. Skipping this page.`);
+            return null;
+        }
+        throw error; // Re-throw if it's a different error
+    }
     
     // Safely extract the page title
     let pageTitle = "Untitled";
@@ -61,29 +70,36 @@ async function processNotionPage(pageId, baseDir, depth = 0, processedPages = ne
             fs.mkdirSync(pageDir, { recursive: true });
         }
 
-        // Prepare content for index.md, including links to child pages
-        let indexContent = `# ${pageTitle}\n\n${mdString.parent}\n\n## Child Pages\n\n`;
+        // Process child pages first
+        let processedChildPages = [];
         for (const childPage of childPages) {
-            const childTitle = childPage.title || "Untitled Child Page";
-            const childSanitizedTitle = childTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-            indexContent += `- [${childTitle}](./${childSanitizedTitle}.md)\n`;
+            const childResult = await processNotionPage(childPage.id, pageDir, depth + 1, processedPages);
+            if (childResult) {
+                processedChildPages.push(childResult);
+            }
+        }
+
+        // Prepare content for index.md, including links to child pages
+        let indexContent = `# ${pageTitle}\n\n${mdString.parent}\n\n`;
+        if (processedChildPages.length > 0) {
+            indexContent += `## Child Pages\n\n`;
+            for (const childInfo of processedChildPages) {
+                indexContent += `- [${childInfo.title}](./${childInfo.sanitizedTitle}.md)\n`;
+            }
         }
 
         // Write the main page content with child page links
         const mainFilePath = path.join(pageDir, `index.md`);
         fs.writeFileSync(mainFilePath, indexContent);
         console.log(`${'  '.repeat(depth)}Created ${mainFilePath}`);
-
-        // Process child pages
-        for (const childPage of childPages) {
-            await processNotionPage(childPage.blockId, pageDir, depth + 1, processedPages);
-        }
     } else {
         // Write the page content as a single .md file if it has no subpages
         const filePath = path.join(baseDir, `${sanitizedTitle}.md`);
         fs.writeFileSync(filePath, `# ${pageTitle}\n\n${mdString.parent}`);
         console.log(`${'  '.repeat(depth)}Created ${filePath}`);
     }
+
+    return { title: pageTitle, sanitizedTitle: sanitizedTitle };
 }
 
 function setupGit(baseDir) {
@@ -162,28 +178,80 @@ async function getAllAccessiblePages() {
 }
 
 // Main execution
-(async () => {
-    try {
-        // Set up the base directory for Notion notes
-        const baseDir = process.env.GITHUB_WORKSPACE || path.join(__dirname, 'notion_notes');
-        if (!fs.existsSync(baseDir)) {
-            fs.mkdirSync(baseDir, { recursive: true });
-        }
-
-        // Retrieve all accessible Notion pages
-        const pages = await getAllAccessiblePages();
-        console.log(`Found ${pages.length} accessible pages`);
-
-        // Process each page
-        const processedPages = new Set();
-        for (const page of pages) {
-            await processNotionPage(page.id, baseDir, 0, processedPages);
-        }
-
-        // Commit and push all changes to GitHub
-        await commitAndPush(baseDir);
-
-    } catch (error) {
-        console.error('Error:', error.message);
+async function processNotionPage(pageId, baseDir, depth = 0, processedPages = new Set()) {
+    if (processedPages.has(pageId)) {
+        return null; // Skip if page has already been processed
     }
-})();
+    processedPages.add(pageId);
+
+    let page;
+    try {
+        // Retrieve the page details
+        page = await notion.pages.retrieve({ page_id: pageId });
+    } catch (error) {
+        if (error.code === 'object_not_found') {
+            console.warn(`Warning: Could not access page with ID: ${pageId}. Skipping this page.`);
+            return null;
+        }
+        throw error; // Re-throw if it's a different error
+    }
+    
+    // Safely extract the page title
+    let pageTitle = "Untitled";
+    if (page.properties.title && 
+        Array.isArray(page.properties.title.title) && 
+        page.properties.title.title.length > 0 &&
+        page.properties.title.title[0].plain_text) {
+        pageTitle = page.properties.title.title[0].plain_text;
+    }
+    
+    console.log(`${'  '.repeat(depth)}Processing: ${pageTitle}`);
+
+    // Convert page content to markdown
+    const mdblocks = await n2m.pageToMarkdown(pageId);
+    const mdString = n2m.toMarkdownString(mdblocks);
+
+    // Sanitize the title for use as a filename or directory name
+    const sanitizedTitle = pageTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+
+    // Check if the page has child pages
+    const childPages = mdblocks.filter(block => block.type === 'child_page');
+
+    if (childPages.length > 0) {
+        // Create a directory for this page if it has subpages
+        const pageDir = path.join(baseDir, sanitizedTitle);
+        if (!fs.existsSync(pageDir)) {
+            fs.mkdirSync(pageDir, { recursive: true });
+        }
+
+        // Process child pages first
+        let processedChildPages = [];
+        for (const childPage of childPages) {
+            const childResult = await processNotionPage(childPage.id, pageDir, depth + 1, processedPages);
+            if (childResult) {
+                processedChildPages.push(childResult);
+            }
+        }
+
+        // Prepare content for index.md, including links to child pages
+        let indexContent = `# ${pageTitle}\n\n${mdString.parent}\n\n`;
+        if (processedChildPages.length > 0) {
+            indexContent += `## Child Pages\n\n`;
+            for (const childInfo of processedChildPages) {
+                indexContent += `- [${childInfo.title}](./${childInfo.sanitizedTitle}.md)\n`;
+            }
+        }
+
+        // Write the main page content with child page links
+        const mainFilePath = path.join(pageDir, `index.md`);
+        fs.writeFileSync(mainFilePath, indexContent);
+        console.log(`${'  '.repeat(depth)}Created ${mainFilePath}`);
+    } else {
+        // Write the page content as a single .md file if it has no subpages
+        const filePath = path.join(baseDir, `${sanitizedTitle}.md`);
+        fs.writeFileSync(filePath, `# ${pageTitle}\n\n${mdString.parent}`);
+        console.log(`${'  '.repeat(depth)}Created ${filePath}`);
+    }
+
+    return { title: pageTitle, sanitizedTitle: sanitizedTitle };
+}
