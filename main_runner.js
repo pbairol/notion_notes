@@ -23,23 +23,35 @@ async function processNotionPage(pageId, baseDir, depth = 0) {
     const mdblocks = await n2m.pageToMarkdown(pageId);
     const mdString = n2m.toMarkdownString(mdblocks);
 
-    // Create a directory for this page if it doesn't exist
-    const pageDir = path.join(baseDir, pageTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase());
-    if (!fs.existsSync(pageDir)) {
-        fs.mkdirSync(pageDir, { recursive: true });
-    }
+    const sanitizedTitle = pageTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase();
 
-    // Write main README file for this page
-    const mainReadmePath = path.join(pageDir, 'README.md');
-    fs.writeFileSync(mainReadmePath, `# ${pageTitle}\n\n${mdString.parent}`);
-    console.log(`${'  '.repeat(depth)}Created ${pageTitle}/README.md`);
+    // Check if the page has child pages
+    const hasChildPages = mdblocks.some(block => block.type === 'child_page');
 
-    // Process child pages
-    for (const block of mdblocks) {
-        if (block.type === 'child_page') {
-            const childPageId = block.blockId;
-            await processNotionPage(childPageId, pageDir, depth + 1);
+    if (hasChildPages) {
+        // Create a directory for this page
+        const pageDir = path.join(baseDir, sanitizedTitle);
+        if (!fs.existsSync(pageDir)) {
+            fs.mkdirSync(pageDir, { recursive: true });
         }
+
+        // Write the main page content
+        const mainFilePath = path.join(pageDir, `${sanitizedTitle}.md`);
+        fs.writeFileSync(mainFilePath, `# ${pageTitle}\n\n${mdString.parent}`);
+        console.log(`${'  '.repeat(depth)}Created ${mainFilePath}`);
+
+        // Process child pages
+        for (const block of mdblocks) {
+            if (block.type === 'child_page') {
+                const childPageId = block.blockId;
+                await processNotionPage(childPageId, pageDir, depth + 1);
+            }
+        }
+    } else {
+        // Write the page content as a single .md file
+        const filePath = path.join(baseDir, `${sanitizedTitle}.md`);
+        fs.writeFileSync(filePath, `# ${pageTitle}\n\n${mdString.parent}`);
+        console.log(`${'  '.repeat(depth)}Created ${filePath}`);
     }
 }
 
@@ -52,7 +64,7 @@ async function commitAndPush(baseDir) {
         execSync('git add .', { cwd: baseDir });
 
         // Commit changes
-        execSync('git commit -m "Update README files from Notion"', { cwd: baseDir });
+        execSync('git commit -m "Update Notion notes"', { cwd: baseDir });
 
         // Push to GitHub (assuming the remote is already set up)
         execSync('git push origin main', { cwd: baseDir });
