@@ -69,22 +69,24 @@ async function processNotionPage(pageId, baseDir, depth = 0, processedPages = ne
     }
 }
 
-/**
- * Set up Git repository
- * @param {string} baseDir - The base directory of the Git repository
- */
 function setupGit(baseDir) {
-    // Initialize git repository if not already initialized
-    if (!fs.existsSync(path.join(baseDir, '.git'))) {
+    // Check if we're in a Git repository
+    try {
+        execSync('git rev-parse --is-inside-work-tree', { cwd: baseDir, stdio: 'ignore' });
+    } catch (error) {
+        // If not in a Git repository, initialize one
         execSync('git init', { cwd: baseDir });
-        execSync('git checkout -b main', { cwd: baseDir }); // Create and switch to main branch
+    }
+
+    // Ensure we're on the main branch
+    try {
+        execSync('git checkout main', { cwd: baseDir });
+    } catch (error) {
+        execSync('git checkout -b main', { cwd: baseDir });
     }
 }
 
-/**
- * Commit changes and push to GitHub
- * @param {string} baseDir - The base directory of the Git repository
- */
+// Modify the commitAndPush function
 async function commitAndPush(baseDir) {
     try {
         setupGit(baseDir);  // Ensure repo and branch setup
@@ -92,8 +94,17 @@ async function commitAndPush(baseDir) {
         // Add all files in the base directory
         execSync('git add .', { cwd: baseDir });
 
-        // Commit changes
-        execSync('git commit -m "Update Notion notes"', { cwd: baseDir });
+        // Commit changes (only if there are changes to commit)
+        try {
+            execSync('git commit -m "Update Notion notes"', { cwd: baseDir });
+        } catch (error) {
+            console.log('No changes to commit');
+            return;
+        }
+
+        // Set the remote URL using the GITHUB_TOKEN
+        const repoUrl = `https://x-access-token:${process.env.GITHUB_TOKEN}@github.com/${process.env.GITHUB_REPOSITORY}.git`;
+        execSync(`git remote set-url origin ${repoUrl}`, { cwd: baseDir });
 
         // Push to GitHub
         execSync('git push origin main', { cwd: baseDir });
@@ -103,6 +114,7 @@ async function commitAndPush(baseDir) {
         console.error('Error during Git operations:', error.message);
     }
 }
+
 
 
 /**
@@ -136,9 +148,9 @@ async function getAllAccessiblePages() {
 (async () => {
     try {
         // Set up the base directory for Notion notes
-        const baseDir = path.join(__dirname, 'notion_notes');
+        const baseDir = process.env.GITHUB_WORKSPACE || path.join(__dirname, 'notion_notes');
         if (!fs.existsSync(baseDir)) {
-            fs.mkdirSync(baseDir);
+            fs.mkdirSync(baseDir, { recursive: true });
         }
 
         // Retrieve all accessible Notion pages
