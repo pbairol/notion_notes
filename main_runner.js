@@ -26,7 +26,7 @@ const n2m = new NotionToMarkdown({
  */
 async function processNotionPage(pageId, baseDir, depth = 0, processedPages = new Set()) {
     if (processedPages.has(pageId)) {
-        return null; // Skip if page has already been processed
+        return; // Skip if page has already been processed
     }
     processedPages.add(pageId);
 
@@ -51,53 +51,49 @@ async function processNotionPage(pageId, baseDir, depth = 0, processedPages = ne
     // Sanitize the title for use as a filename or directory name
     const sanitizedTitle = pageTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase();
 
-    // Fetch child pages
-    const childPages = await notion.blocks.children.list({
-        block_id: pageId,
-        filter: {
-            property: 'type',
-            value: 'child_page'
-        }
-    });
+    // Check if the page has child pages
+    const childPages = mdblocks.filter(block => block.type === 'child_page');
 
-    let childPageInfo = [];
-
-    if (childPages.results.length > 0) {
+    if (childPages.length > 0) {
         // Create a directory for this page if it has subpages
         const pageDir = path.join(baseDir, sanitizedTitle);
         if (!fs.existsSync(pageDir)) {
             fs.mkdirSync(pageDir, { recursive: true });
         }
 
-        // Process child pages
-        for (const childPage of childPages.results) {
-            const childInfo = await processNotionPage(childPage.id, pageDir, depth + 1, processedPages);
-            if (childInfo) {
-                childPageInfo.push(childInfo);
-            }
-        }
-
-        // Create index.md after processing all child pages
+        // Prepare content for index.md, including links to child pages
         let indexContent = `# ${pageTitle}\n\n${mdString.parent}\n\n## Child Pages\n\n`;
-        for (const childInfo of childPageInfo) {
-            indexContent += `- [${childInfo.title}](./${childInfo.sanitizedTitle}.md)\n`;
+        
+        // Fetch details for each child page
+        for (const childPage of childPages) {
+            const childPageDetails = await notion.pages.retrieve({ page_id: childPage.id });
+            let childTitle = "Untitled Child Page";
+            if (childPageDetails.properties.title && 
+                Array.isArray(childPageDetails.properties.title.title) && 
+                childPageDetails.properties.title.title.length > 0 &&
+                childPageDetails.properties.title.title[0].plain_text) {
+                childTitle = childPageDetails.properties.title.title[0].plain_text;
+            }
+            const childSanitizedTitle = childTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+            indexContent += `- [${childTitle}](./${childSanitizedTitle}.md)\n`;
         }
 
+        // Write the main page content with child page links
         const mainFilePath = path.join(pageDir, `index.md`);
         fs.writeFileSync(mainFilePath, indexContent);
         console.log(`${'  '.repeat(depth)}Created ${mainFilePath}`);
 
-        return { title: pageTitle, sanitizedTitle: sanitizedTitle };
+        // Process child pages
+        for (const childPage of childPages) {
+            await processNotionPage(childPage.id, pageDir, depth + 1, processedPages);
+        }
     } else {
         // Write the page content as a single .md file if it has no subpages
         const filePath = path.join(baseDir, `${sanitizedTitle}.md`);
         fs.writeFileSync(filePath, `# ${pageTitle}\n\n${mdString.parent}`);
         console.log(`${'  '.repeat(depth)}Created ${filePath}`);
-
-        return { title: pageTitle, sanitizedTitle: sanitizedTitle };
     }
 }
-
 
 function setupGit(baseDir) {
     // Check if we're in a Git repository
@@ -180,7 +176,7 @@ async function getAllAccessiblePages() {
         // Set up the base directory for Notion notes
         const baseDir = process.env.GITHUB_WORKSPACE || path.join(__dirname, 'notion_notes');
         if (!fs.existsSync(baseDir)) {
-            fs.mkdirSync(baseDir);
+            fs.mkdirSync(baseDir, { recursive: true });
         }
 
         // Retrieve all accessible Notion pages
