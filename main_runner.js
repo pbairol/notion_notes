@@ -64,16 +64,10 @@ async function processNotionPage(pageId, baseDir, depth = 0, processedPages = ne
         // Prepare content for index.md, including links to child pages
         let indexContent = `# ${pageTitle}\n\n${mdString.parent}\n\n## Child Pages\n\n`;
         
-        // Fetch details for each child page
         for (const childPage of childPages) {
-            const childPageDetails = await notion.pages.retrieve({ page_id: childPage.id });
-            let childTitle = "Untitled Child Page";
-            if (childPageDetails.properties.title && 
-                Array.isArray(childPageDetails.properties.title.title) && 
-                childPageDetails.properties.title.title.length > 0 &&
-                childPageDetails.properties.title.title[0].plain_text) {
-                childTitle = childPageDetails.properties.title.title[0].plain_text;
-            }
+            
+            const childTitle = childPage.title || "Untitled Child Page";
+            console.log(`Read through Child Title: ${childTitle}`);
             const childSanitizedTitle = childTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase();
             indexContent += `- [${childTitle}](./${childSanitizedTitle}.md)\n`;
         }
@@ -85,7 +79,11 @@ async function processNotionPage(pageId, baseDir, depth = 0, processedPages = ne
 
         // Process child pages
         for (const childPage of childPages) {
-            await processNotionPage(childPage.id, pageDir, depth + 1, processedPages);
+            if (childPage.id) {
+                await processNotionPage(childPage.id, pageDir, depth + 1, processedPages);
+            } else {
+                console.warn(`Warning: Child page "${childPage.title}" has no ID and will be skipped.`);
+            }
         }
     } else {
         // Write the page content as a single .md file if it has no subpages
@@ -94,7 +92,6 @@ async function processNotionPage(pageId, baseDir, depth = 0, processedPages = ne
         console.log(`${'  '.repeat(depth)}Created ${filePath}`);
     }
 }
-
 function setupGit(baseDir) {
     // Check if we're in a Git repository
     try {
