@@ -63,8 +63,17 @@ async function processNotionPage(pageId, baseDir, depth = 0, processedPages = ne
 
         // Prepare content for index.md, including links to child pages
         let indexContent = `# ${pageTitle}\n\n${mdString.parent}\n\n## Child Pages\n\n`;
+        
+        // Fetch details for each child page
         for (const childPage of childPages) {
-            const childTitle = childPage.title || "Untitled Child Page";
+            const childPageDetails = await notion.pages.retrieve({ page_id: childPage.id });
+            let childTitle = "Untitled Child Page";
+            if (childPageDetails.properties.title && 
+                Array.isArray(childPageDetails.properties.title.title) && 
+                childPageDetails.properties.title.title.length > 0 &&
+                childPageDetails.properties.title.title[0].plain_text) {
+                childTitle = childPageDetails.properties.title.title[0].plain_text;
+            }
             const childSanitizedTitle = childTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase();
             indexContent += `- [${childTitle}](./${childSanitizedTitle}.md)\n`;
         }
@@ -76,7 +85,7 @@ async function processNotionPage(pageId, baseDir, depth = 0, processedPages = ne
 
         // Process child pages
         for (const childPage of childPages) {
-            await processNotionPage(childPage.blockId, pageDir, depth + 1, processedPages);
+            await processNotionPage(childPage.id, pageDir, depth + 1, processedPages);
         }
     } else {
         // Write the page content as a single .md file if it has no subpages
