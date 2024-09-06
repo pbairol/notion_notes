@@ -2,55 +2,110 @@ const { Client } = require("@notionhq/client");
 const { NotionToMarkdown } = require("notion-to-md");
 const fs = require('fs');
 const path = require('path');
-
-
-// or
-// import {NotionToMarkdown} from "notion-to-md";
+const { execSync } = require('child_process');
 
 const notion = new Client({
     auth: process.env.NOTION_API_KEY,
 });
 
-// passing notion client to the option
-// passing notion client to the option
 const n2m = new NotionToMarkdown({
     notionClient: notion,
     config: {
-        separateChildPage: true, // default: false
+        separateChildPage: true,
     }
 });
 
-
-(async () => {
-
-    const response = await notion.search({
-        query: 'Data Structures & Algorithm Notes',
-        filter: {
-            value: 'page',
-            property: 'object'
-        },
-        sort: {
-            direction: 'ascending',
-            timestamp: 'last_edited_time'
-        },
-    });
-    const pageId = response.results[0].id; // page's hash
+async function processNotionPage(pageId, baseDir) {
     const page = await notion.pages.retrieve({ page_id: pageId });
     const pageTitle = page.properties.title.title[0].plain_text;
+    console.log(`Processing: ${pageTitle}`);
 
-    console.log(pageTitle)
     const mdblocks = await n2m.pageToMarkdown(pageId);
     const mdString = n2m.toMarkdownString(mdblocks);
 
-    // Split the markdown string into sections for each child page
-    const childPages = mdblocks.filter(block => block.type === 'child_page');
-    // const sections = mdString.split(/(?=## )/); // Assuming child pages are marked with '##' headers
-    for (const [title, content] of Object.entries(mdString)) {
-        // Create a valid filename by replacing spaces with underscores and removing special characters
-        const filename = title.replace(/[^a-z0-9]/gi, '_').toLowerCase() + '.md';
-        // Write the content to the file
-        fs.writeFileSync(path.join(__dirname, filename), content);
-        console.log(`Created file: ${filename}`);
+    // Create a directory for this page if it doesn't exist
+    const pageDir = path.join(baseDir, pageTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase());
+    if (!fs.existsSync(pageDir)) {
+        fs.mkdirSync(pageDir, { recursive: true });
     }
 
+    // Write main README file for this page
+    const mainReadmePath = path.join(pageDir, 'README.md');
+    fs.writeFileSync(mainReadmePath, `# ${pageTitle}\n\n${mdString.parent}`);
+    console.log(`Created ${pageTitle}/README.md`);
+
+    // Write child page README files
+    for (const block of mdblocks) {
+        if (block.type === 'child_page') {
+            const filename = block.parent.replace(/[^a-z0-9]/gi, '_').toLowerCase() + '.md';
+            const filePath = path.join(pageDir, filename);
+            fs.writeFileSync(filePath, block.children);
+            console.log(`Created file: ${pageTitle}/${filename}`);
+        }
+    }
+}
+
+async function commitAndPush(baseDir) {
+    try {
+        // Initialize git repository if not already initialized
+        execSync('git init', { cwd: baseDir });
+
+        // Add all files in the base directory
+        execSync('git add .', { cwd: baseDir });
+
+        // Commit changes
+        execSync('git commit -m "Update README files from Notion"', { cwd: baseDir });
+
+        // Push to GitHub (assuming the remote is already set up)
+        execSync('git push origin main', { cwd: baseDir });
+
+        console.log('Successfully committed and pushed to GitHub');
+    } catch (error) {
+        console.error('Error during Git operations:', error.message);
+    }
+}
+
+async function getAllAccessiblePages() {
+    let pages = [];
+    let hasMore = true;
+    let startCursor = undefined;
+
+    while (hasMore) {
+        const response = await notion.search({
+            filter: {
+                value: 'page',
+                property: 'object'
+            },
+            start_cursor: startCursor,
+            page_size: 100,  // maximum allowed by Notion API
+        });
+
+        pages = pages.concat(response.results);
+        hasMore = response.has_more;
+        startCursor = response.next_cursor;
+    }
+
+    return pages;
+}
+
+(async () => {
+    try {
+        const baseDir = path.join(__dirname, 'notion_notes');
+        if (!fs.existsSync(baseDir)) {
+            fs.mkdirSync(baseDir);
+        }
+
+        const pages = await getAllAccessiblePages();
+        console.log(`Found ${pages.length} accessible pages`);
+
+        for (const page of pages) {
+            await processNotionPage(page.id, baseDir);
+        }
+
+        // Commit and push all changes to GitHub
+        await commitAndPush(baseDir);
+
+    } catch (error) {
+        console.error('Error:', error.message);
+    }
 })();
