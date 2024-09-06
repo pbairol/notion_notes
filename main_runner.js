@@ -82,11 +82,11 @@ async function processNotionPage(pageId, baseDir, depth = 0, processedPages = ne
                     processedChildPages.push(childResult);
                 }
             } else {
-                console.warn(`Warning: Child page of "${pageTitle}" has no ID and will be skipped.`);
+                console.warn(`Warning: Child page "${childPage.title}" of "${pageTitle}" has no ID and will be skipped.`);
             }
         }
 
-        // Prepare content for index.md, including links to child pages
+        // After processing all child pages, create the index.md
         let indexContent = `# ${pageTitle}\n\n${mdString.parent}\n\n`;
         if (processedChildPages.length > 0) {
             indexContent += `## Child Pages\n\n`;
