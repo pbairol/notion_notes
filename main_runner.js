@@ -26,7 +26,7 @@ const n2m = new NotionToMarkdown({
  */
 async function processNotionPage(pageId, baseDir, depth = 0, processedPages = new Set()) {
     if (processedPages.has(pageId)) {
-        return; // Skip if page has already been processed
+        return null; // Skip if page has already been processed
     }
     processedPages.add(pageId);
 
@@ -60,6 +60,8 @@ async function processNotionPage(pageId, baseDir, depth = 0, processedPages = ne
         }
     });
 
+    let childPageInfo = [];
+
     if (childPages.results.length > 0) {
         // Create a directory for this page if it has subpages
         const pageDir = path.join(baseDir, sanitizedTitle);
@@ -67,30 +69,32 @@ async function processNotionPage(pageId, baseDir, depth = 0, processedPages = ne
             fs.mkdirSync(pageDir, { recursive: true });
         }
 
-        // Prepare content for index.md, including links to child pages
-        let indexContent = `# ${pageTitle}\n\n${mdString.parent}\n\n## Child Pages\n\n`;
-        
+        // Process child pages
         for (const childPage of childPages.results) {
-            const childTitle = childPage.child_page.title || "Untitled Child Page";
-            const childSanitizedTitle = childTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-            indexContent += `- [${childTitle}](./${childSanitizedTitle}.md)\n`;
-            console.log(`${'  '.repeat(depth + 1)}Child page: ${childTitle}`);
+            const childInfo = await processNotionPage(childPage.id, pageDir, depth + 1, processedPages);
+            if (childInfo) {
+                childPageInfo.push(childInfo);
+            }
         }
 
-        // Write the main page content with child page links
+        // Create index.md after processing all child pages
+        let indexContent = `# ${pageTitle}\n\n${mdString.parent}\n\n## Child Pages\n\n`;
+        for (const childInfo of childPageInfo) {
+            indexContent += `- [${childInfo.title}](./${childInfo.sanitizedTitle}.md)\n`;
+        }
+
         const mainFilePath = path.join(pageDir, `index.md`);
         fs.writeFileSync(mainFilePath, indexContent);
         console.log(`${'  '.repeat(depth)}Created ${mainFilePath}`);
 
-        // Process child pages
-        for (const childPage of childPages.results) {
-            await processNotionPage(childPage.id, pageDir, depth + 1, processedPages);
-        }
+        return { title: pageTitle, sanitizedTitle: sanitizedTitle };
     } else {
         // Write the page content as a single .md file if it has no subpages
         const filePath = path.join(baseDir, `${sanitizedTitle}.md`);
         fs.writeFileSync(filePath, `# ${pageTitle}\n\n${mdString.parent}`);
         console.log(`${'  '.repeat(depth)}Created ${filePath}`);
+
+        return { title: pageTitle, sanitizedTitle: sanitizedTitle };
     }
 }
 
@@ -176,7 +180,7 @@ async function getAllAccessiblePages() {
         // Set up the base directory for Notion notes
         const baseDir = process.env.GITHUB_WORKSPACE || path.join(__dirname, 'notion_notes');
         if (!fs.existsSync(baseDir)) {
-            fs.mkdirSync(baseDir, { recursive: true });
+            fs.mkdirSync(baseDir);
         }
 
         // Retrieve all accessible Notion pages
