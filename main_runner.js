@@ -51,10 +51,16 @@ async function processNotionPage(pageId, baseDir, depth = 0, processedPages = ne
     // Sanitize the title for use as a filename or directory name
     const sanitizedTitle = pageTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase();
 
-    // Check if the page has child pages
-    const childPages = mdblocks.filter(block => block.type === 'child_page');
+    // Fetch child pages
+    const childPages = await notion.blocks.children.list({
+        block_id: pageId,
+        filter: {
+            property: 'type',
+            value: 'child_page'
+        }
+    });
 
-    if (childPages.length > 0) {
+    if (childPages.results.length > 0) {
         // Create a directory for this page if it has subpages
         const pageDir = path.join(baseDir, sanitizedTitle);
         if (!fs.existsSync(pageDir)) {
@@ -64,12 +70,11 @@ async function processNotionPage(pageId, baseDir, depth = 0, processedPages = ne
         // Prepare content for index.md, including links to child pages
         let indexContent = `# ${pageTitle}\n\n${mdString.parent}\n\n## Child Pages\n\n`;
         
-        for (const childPage of childPages) {
-            
-            const childTitle = childPage.title || "Untitled Child Page";
-            console.log(`Read through Child Title: ${childTitle}`);
+        for (const childPage of childPages.results) {
+            const childTitle = childPage.child_page.title || "Untitled Child Page";
             const childSanitizedTitle = childTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase();
             indexContent += `- [${childTitle}](./${childSanitizedTitle}.md)\n`;
+            console.log(`${'  '.repeat(depth + 1)}Child page: ${childTitle}`);
         }
 
         // Write the main page content with child page links
@@ -78,12 +83,8 @@ async function processNotionPage(pageId, baseDir, depth = 0, processedPages = ne
         console.log(`${'  '.repeat(depth)}Created ${mainFilePath}`);
 
         // Process child pages
-        for (const childPage of childPages) {
-            if (childPage.id) {
-                await processNotionPage(childPage.id, pageDir, depth + 1, processedPages);
-            } else {
-                console.warn(`Warning: Child page "${childPage.title}" has no ID and will be skipped.`);
-            }
+        for (const childPage of childPages.results) {
+            await processNotionPage(childPage.id, pageDir, depth + 1, processedPages);
         }
     } else {
         // Write the page content as a single .md file if it has no subpages
@@ -92,6 +93,8 @@ async function processNotionPage(pageId, baseDir, depth = 0, processedPages = ne
         console.log(`${'  '.repeat(depth)}Created ${filePath}`);
     }
 }
+
+
 function setupGit(baseDir) {
     // Check if we're in a Git repository
     try {
