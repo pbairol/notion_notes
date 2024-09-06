@@ -15,10 +15,10 @@ const n2m = new NotionToMarkdown({
     }
 });
 
-async function processNotionPage(pageId, baseDir) {
+async function processNotionPage(pageId, baseDir, depth = 0) {
     const page = await notion.pages.retrieve({ page_id: pageId });
     const pageTitle = page.properties.title.title[0].plain_text;
-    console.log(`Processing: ${pageTitle}`);
+    console.log(`${'  '.repeat(depth)}Processing: ${pageTitle}`);
 
     const mdblocks = await n2m.pageToMarkdown(pageId);
     const mdString = n2m.toMarkdownString(mdblocks);
@@ -32,15 +32,13 @@ async function processNotionPage(pageId, baseDir) {
     // Write main README file for this page
     const mainReadmePath = path.join(pageDir, 'README.md');
     fs.writeFileSync(mainReadmePath, `# ${pageTitle}\n\n${mdString.parent}`);
-    console.log(`Created ${pageTitle}/README.md`);
+    console.log(`${'  '.repeat(depth)}Created ${pageTitle}/README.md`);
 
-    // Write child page README files
+    // Process child pages
     for (const block of mdblocks) {
         if (block.type === 'child_page') {
-            const filename = block.parent.replace(/[^a-z0-9]/gi, '_').toLowerCase() + '.md';
-            const filePath = path.join(pageDir, filename);
-            fs.writeFileSync(filePath, block.children);
-            console.log(`Created file: ${pageTitle}/${filename}`);
+            const childPageId = block.blockId;
+            await processNotionPage(childPageId, pageDir, depth + 1);
         }
     }
 }
