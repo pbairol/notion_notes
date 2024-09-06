@@ -32,7 +32,16 @@ async function processNotionPage(pageId, baseDir, depth = 0, processedPages = ne
 
     // Retrieve the page details
     const page = await notion.pages.retrieve({ page_id: pageId });
-    const pageTitle = page.properties.title.title[0].plain_text;
+    
+    // Safely extract the page title
+    let pageTitle = "Untitled";
+    if (page.properties.title && 
+        Array.isArray(page.properties.title.title) && 
+        page.properties.title.title.length > 0 &&
+        page.properties.title.title[0].plain_text) {
+        pageTitle = page.properties.title.title[0].plain_text;
+    }
+    
     console.log(`${'  '.repeat(depth)}Processing: ${pageTitle}`);
 
     // Convert page content to markdown
@@ -55,7 +64,7 @@ async function processNotionPage(pageId, baseDir, depth = 0, processedPages = ne
         // Prepare content for index.md, including links to child pages
         let indexContent = `# ${pageTitle}\n\n${mdString.parent}\n\n## Child Pages\n\n`;
         for (const childPage of childPages) {
-            const childTitle = childPage.title;
+            const childTitle = childPage.title || "Untitled Child Page";
             const childSanitizedTitle = childTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase();
             indexContent += `- [${childTitle}](./${childSanitizedTitle}.md)\n`;
         }
