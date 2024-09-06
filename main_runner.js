@@ -25,8 +25,8 @@ const n2m = new NotionToMarkdown({
  * @param {Set} processedPages - Set of already processed page IDs
  */
 async function processNotionPage(pageId, baseDir, depth = 0, processedPages = new Set()) {
-    if (processedPages.has(pageId)) {
-        return null; // Skip if page has already been processed
+    if (!pageId || processedPages.has(pageId)) {
+        return null; // Skip if page has no ID or has already been processed
     }
     processedPages.add(pageId);
 
@@ -35,11 +35,8 @@ async function processNotionPage(pageId, baseDir, depth = 0, processedPages = ne
         // Retrieve the page details
         page = await notion.pages.retrieve({ page_id: pageId });
     } catch (error) {
-        if (error.code === 'object_not_found') {
-            console.warn(`Warning: Could not access page with ID: ${pageId}. Skipping this page.`);
-            return null;
-        }
-        throw error; // Re-throw if it's a different error
+        console.warn(`Warning: Could not access page with ID: ${pageId}. Error: ${error.message}`);
+        return null;
     }
     
     // Safely extract the page title
@@ -54,7 +51,13 @@ async function processNotionPage(pageId, baseDir, depth = 0, processedPages = ne
     console.log(`${'  '.repeat(depth)}Processing: ${pageTitle}`);
 
     // Convert page content to markdown
-    const mdblocks = await n2m.pageToMarkdown(pageId);
+    let mdblocks;
+    try {
+        mdblocks = await n2m.pageToMarkdown(pageId);
+    } catch (error) {
+        console.warn(`Warning: Could not convert page to markdown. ID: ${pageId}, Title: ${pageTitle}. Error: ${error.message}`);
+        return { title: pageTitle, sanitizedTitle: pageTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase() };
+    }
     const mdString = n2m.toMarkdownString(mdblocks);
 
     // Sanitize the title for use as a filename or directory name
@@ -73,9 +76,13 @@ async function processNotionPage(pageId, baseDir, depth = 0, processedPages = ne
         // Process child pages first
         let processedChildPages = [];
         for (const childPage of childPages) {
-            const childResult = await processNotionPage(childPage.id, pageDir, depth + 1, processedPages);
-            if (childResult) {
-                processedChildPages.push(childResult);
+            if (childPage.id) {
+                const childResult = await processNotionPage(childPage.id, pageDir, depth + 1, processedPages);
+                if (childResult) {
+                    processedChildPages.push(childResult);
+                }
+            } else {
+                console.warn(`Warning: Child page of "${pageTitle}" has no ID and will be skipped.`);
             }
         }
 
