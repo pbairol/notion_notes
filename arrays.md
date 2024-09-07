@@ -8,7 +8,7 @@
 - Each value that is a int/float takes up 4 bytes or 32 bits
 - Each value that is an ASCII character takes up 1 byte or 8 bits
 
- 
+ YO
 
 
 ## Properties of Arrays
